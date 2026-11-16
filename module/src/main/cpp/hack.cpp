@@ -13,14 +13,15 @@
 #include <dlfcn.h>
 #include <jni.h>
 #include <thread>
+#include <chrono>
 #include <sys/mman.h>
 #include <linux/unistd.h>
 #include <array>
 
 void hack_start(const char *game_data_dir) {
-    sleep(3*60*1000)
     bool load = false;
-    for (int i = 0; i < 10; i++) {
+    // Tăng số lần thử lên 30 lần để đảm bảo game có đủ thời gian khởi động ổn định
+    for (int i = 0; i < 30; i++) {
         void *handle = xdl_open("libil2cpp.so", 0);
         if (handle) {
             load = true;
@@ -28,7 +29,9 @@ void hack_start(const char *game_data_dir) {
             il2cpp_dump(game_data_dir);
             break;
         } else {
-            sleep(1);
+            // Sử dụng chuẩn std::this_thread::sleep_for chờ 2 giây mỗi lần lặp (Tổng cộng lên tới 60 giây)
+            // Giúp tránh việc hook quá sớm làm văng game.
+            std::this_thread::sleep_for(std::chrono::seconds(2));
         }
     }
     if (!load) {
@@ -46,15 +49,15 @@ std::string GetLibDir(JavaVM *vms) {
                                                                 "()Landroid/app/Application;");
         if (currentApplicationId) {
             jobject application = env->CallStaticObjectMethod(activity_thread_clz,
-                                                              currentApplicationId);
+                                                            currentApplicationId);
             jclass application_clazz = env->GetObjectClass(application);
             if (application_clazz) {
                 jmethodID get_application_info = env->GetMethodID(application_clazz,
-                                                                  "getApplicationInfo",
-                                                                  "()Landroid/content/pm/ApplicationInfo;");
+                                                                "getApplicationInfo",
+                                                                "()Landroid/content/pm/ApplicationInfo;");
                 if (get_application_info) {
                     jobject application_info = env->CallObjectMethod(application,
-                                                                     get_application_info);
+                                                                   get_application_info);
                     jfieldID native_library_dir_id = env->GetFieldID(
                             env->GetObjectClass(application_info), "nativeLibraryDir",
                             "Ljava/lang/String;");
@@ -113,12 +116,12 @@ struct NativeBridgeCallbacks {
 };
 
 bool NativeBridgeLoad(const char *game_data_dir, int api_level, void *data, size_t length) {
-    //TODO 等待houdini初始化
-    sleep(5);
+    // Tăng thời gian chờ khởi động houdini lên 8 giây để tránh crash hệ thống giả lập/x86
+    std::this_thread::sleep_for(std::chrono::seconds(8));
 
     auto libart = dlopen("libart.so", RTLD_NOW);
     auto JNI_GetCreatedJavaVMs = (jint (*)(JavaVM **, jsize, jsize *)) dlsym(libart,
-                                                                             "JNI_GetCreatedJavaVMs");
+                                                                            "JNI_GetCreatedJavaVMs");
     LOGI("JNI_GetCreatedJavaVMs %p", JNI_GetCreatedJavaVMs);
     JavaVM *vms_buf[1];
     JavaVM *vms;
@@ -175,8 +178,8 @@ bool NativeBridgeLoad(const char *game_data_dir, int api_level, void *data, size
             if (arm_handle) {
                 LOGI("arm handle %p", arm_handle);
                 auto init = (void (*)(JavaVM *, void *)) callbacks->getTrampoline(arm_handle,
-                                                                                  "JNI_OnLoad",
-                                                                                  nullptr, 0);
+                                                                                "JNI_OnLoad",
+                                                                                nullptr, 0);
                 LOGI("JNI_OnLoad %p", init);
                 init(vms, (void *) game_data_dir);
                 return true;
