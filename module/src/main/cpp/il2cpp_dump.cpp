@@ -12,6 +12,7 @@
 #include <sstream>
 #include <fstream>
 #include <unistd.h>
+#include <sys/stat.h>
 #include "xdl.h"
 #include "log.h"
 #include "il2cpp-tabledefs.h"
@@ -26,7 +27,7 @@
 static uint64_t il2cpp_base = 0;
 
 void init_il2cpp_api(void *handle) {
-#define DO_API(r, n, p) {                      \
+#define DO_API(r, n, p) {                     \
     n = (r (*) p)xdl_sym(handle, #n, nullptr); \
     if(!n) {                                   \
         LOGW("api not found %s", #n);          \
@@ -417,13 +418,23 @@ void il2cpp_dump(const char *outDir) {
         }
     }
     LOGI("write dump file");
-    auto outPath = std::string(outDir).append("/files/dump.cs");
+    
+    // Đổi đường dẫn ghi file thẳng ra thư mục Download để tránh lỗi hệ thống gây văng game
+    std::string outDirStr = "/sdcard/Download";
+    mkdir(outDirStr.c_str(), 0777);
+    
+    auto outPath = outDirStr + "/dump.cs";
     std::ofstream outStream(outPath);
+    if (!outStream.is_open()) {
+        LOGE("Failed to open output file at: %s", outPath.c_str());
+        return;
+    }
+
     outStream << imageOutput.str();
     auto count = outPuts.size();
     for (int i = 0; i < count; ++i) {
         outStream << outPuts[i];
     }
     outStream.close();
-    LOGI("dump done!");
+    LOGI("dump done! Saved to %s", outPath.c_str());
 }
